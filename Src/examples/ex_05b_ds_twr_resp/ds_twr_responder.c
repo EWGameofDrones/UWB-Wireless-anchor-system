@@ -51,16 +51,44 @@ static dwt_config_t config = {
 };
 
 /* Inter-ranging delay period, in milliseconds. */
-#define RNG_DELAY_MS 1000
+#define RNG_DELAY_MS 500
 
 /* Default antenna delay values for 64 MHz PRF. See NOTE 1 below. */
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
+static const uint8_t SOURCE_ADDR = 'A';
+
 /* Frames used in the ranging process. See NOTE 2 below. */
 static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0x21, 0, 0 };
 static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0x10, 0x02, 0, 0, 0, 0 };
 static uint8_t rx_final_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0x23, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+
+static uint8_t tx_dist_msg[] = { 
+    0x41, 0x88,  // Frame control
+    0,           // Sequence number
+    0xCA, 0xDE,  // PAN ID
+    'W', 'A',    // Destination address
+    'D', SOURCE_ADDR,    // Source address
+    0xE2,        // Function code for distance message
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // Will hold distance value as a string
+};
+
+/* Function to pack distance into message */
+static void dist_msg_set_value(uint8_t *buffer, float distance)
+{
+    uint32_t dist_int = (uint32_t)(distance * 1000); // Convert to millimeters
+    debug_log("Original distance: %f, dist_int: %u", distance, dist_int);
+    buffer[10] = (uint8_t)(dist_int >> 24);
+    buffer[11] = (uint8_t)(dist_int >> 16);
+    buffer[12] = (uint8_t)(dist_int >> 8);
+    buffer[13] = (uint8_t)dist_int;
+
+    debug_log("Individual bytes: %02x %02x %02x %02x", 
+        buffer[10], buffer[11], buffer[12], buffer[13]);
+
+}
+
 /* Length of the common part of the message (up to and including the function code, see NOTE 2 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
@@ -114,6 +142,7 @@ extern dwt_txconfig_t txconfig_options;
 int ds_twr_responder(void)
 {
     /* Display application name on LCD. */
+    debug_log("SOURCE_ADDR: %c", SOURCE_ADDR);
     test_run_info((unsigned char *)APP_NAME);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
@@ -207,6 +236,8 @@ int ds_twr_responder(void)
                 dwt_writetxdata(sizeof(tx_resp_msg), tx_resp_msg, 0); /* Zero offset in TX buffer. */
                 dwt_writetxfctrl(sizeof(tx_resp_msg), 0, 1);          /* Zero offset in TX buffer, ranging. */
                 ret = dwt_starttx(DWT_START_TX_DELAYED | DWT_RESPONSE_EXPECTED);
+                
+                debug_log("tx_started");
 
                 /* If dwt_starttx() returns an error, abandon this ranging exchange and proceed to the next one. See NOTE 11 below. */
                 if (ret == DWT_ERROR)
@@ -266,6 +297,20 @@ int ds_twr_responder(void)
                         /* Display computed distance on LCD. */
                         sprintf(dist_str, "DIST: %3.2f m", distance);
                         test_run_info((unsigned char *)dist_str);
+
+                        dist_msg_set_value(tx_dist_msg, (float)distance);
+
+                        // Write frame data to DW IC and prepare transmission
+                        dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+                        dwt_writetxdata(sizeof(tx_dist_msg), tx_dist_msg, 0);
+                        dwt_writetxfctrl(sizeof(tx_dist_msg), 0, 1);
+
+                        // Start transmission
+                        dwt_starttx(DWT_START_TX_IMMEDIATE);
+
+                        // Wait for transmission to complete
+                        waitforsysstatus(&status_reg, NULL, DWT_INT_TXFRS_BIT_MASK, 0);
+                        debug_log("Distance message sent");
 
                         /* as DS-TWR initiator is waiting for RNG_DELAY_MS before next poll transmission
                          * we can add a delay here before RX is re-enabled again

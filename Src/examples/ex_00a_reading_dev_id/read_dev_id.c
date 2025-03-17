@@ -17,6 +17,7 @@
 #include <example_selection.h>
 #include <port.h>
 #include <stdio.h>
+#include "nrf_delay.h"
 
 #if defined(TEST_READING_DEV_ID)
 
@@ -63,6 +64,10 @@ int read_dev_id(void)
     if ((err = dwt_check_dev_id()) == DWT_SUCCESS)
     {
         test_run_info((unsigned char *)"DEV ID OK");
+        while (1) {
+            test_run_info((unsigned char *)"FAU->DEV ID OK");
+            nrf_delay_ms(500);
+        }
     }
     else
     {

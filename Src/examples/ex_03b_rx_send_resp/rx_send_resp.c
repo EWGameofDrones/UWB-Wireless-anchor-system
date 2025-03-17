@@ -171,7 +171,8 @@ int rx_send_resp(void)
                 dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
 
                 /* Increment the data frame sequence number (modulo 256). */
-                tx_msg[DATA_FRAME_SN_IDX]++;
+                // tx_msg[DATA_FRAME_SN_IDX]++;
+                tx_msg[DATA_FRAME_SN_IDX] = 2;
             }
         }
         else

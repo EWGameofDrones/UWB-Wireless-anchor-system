@@ -26,6 +26,39 @@
 #include <shared_defines.h>
 #include <shared_functions.h>
 
+#include "nrf_drv_uart.h"
+
+// Define UART instance a
+static const nrf_drv_uart_t uart_inst = NRF_DRV_UART_INSTANCE(0);
+
+// Initialize UART
+static void uart_init(void)
+{
+    ret_code_t err_code;
+    
+    nrf_drv_uart_config_t uart_config = NRF_DRV_UART_DEFAULT_CONFIG;
+    uart_config.pseltxd = TX_PIN_NUMBER;  // Define your TX pin
+    uart_config.pselrxd = RX_PIN_NUMBER;  // Define your RX pin
+    uart_config.baudrate = NRF_UART_BAUDRATE_115200;
+    
+    err_code = nrf_drv_uart_init(&uart_inst, &uart_config, NULL);
+    if (err_code != NRF_SUCCESS) {
+        // debug_log("UART initialization failed: %d", err_code);
+        APP_ERROR_CHECK(err_code);
+    } else {
+        // debug_log("UART initialized successfully");
+    }
+}
+
+// send data over UART
+static void uart_send(const char *data)
+{
+    // debug_log("Sending data over UART");
+    ret_code_t err_code;
+    err_code = nrf_drv_uart_tx(&uart_inst, (uint8_t *)data, strlen(data));
+    APP_ERROR_CHECK(err_code);
+}
+
 #if defined(TEST_SS_TWR_INITIATOR)
 
 extern void test_run_info(unsigned char *data);
@@ -51,14 +84,56 @@ static dwt_config_t config = {
 };
 
 /* Inter-ranging delay period, in milliseconds. */
-#define RNG_DELAY_MS 1000
+// #define RNG_DELAY_MS 100
+static const float OFFSET = 10.00;
+// static const float OFFSET = 11.11;
+// static const float OFFSET = 12.37;
+static const float RNG_DELAY_MS = 0.0 + OFFSET;
+
+static const uint8_t SOURCE_ADDR = 'A';
+// static const uint8_t SOURCE_ADDR = 'B';
+// static const uint8_t SOURCE_ADDR = 'C';
 
 /* Default antenna delay values for 64 MHz PRF. See NOTE 2 below. */
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
+//  * 3. The frames used here are Decawave specific ranging frames, complying with the IEEE 802.15.4 standard data frame encoding. The frames are the
+//  *    following:
+//  *     - a poll message sent by the initiator to trigger the ranging exchange.
+//  *     - a response message sent by the responder to complete the exchange and provide all information needed by the initiator to compute the
+//  *       time-of-flight (distance) estimate.
+//  *    The first 10 bytes of those frame are common and are composed of the following fields:
+//  *     - byte 0/1: frame control (0x8841 to indicate a data frame using 16-bit addressing).
+//  *     - byte 2: sequence number, incremented for each new frame.
+//  *     - byte 3/4: PAN ID (0xDECA).
+//  *     - byte 5/6: destination address, see NOTE 4 below.
+//  *     - byte 7/8: source address, see NOTE 4 below.
+//  *     - byte 9: function code (specific values to indicate which message it is in the ranging process).
+//  *    The remaining bytes are specific to each message as follows:
+//  *    Poll message:
+//  *     - no more data
+//  *    Response message:
+//  *     - byte 10 -> 13: poll message reception timestamp.
+//  *     - byte 14 -> 17: response message transmission timestamp.
+//  *    All messages end with a 2-byte checksum automatically set by DW IC.
+
+// tx distance message
+static uint8_t tx_dist_msg[] = { 
+    0x41, 0x88,  // Frame control
+    0,           // Sequence number
+    0xCA, 0xDE,  // PAN ID in correct byte order (little-endian)
+    'D', 'B',    // CHANGE: Use dedicated destination address 'DB' (Distance Buffer)
+    'D', SOURCE_ADDR,    // Source address 
+    0xE2,        // Function code
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0   // Distance value
+};
+
+// static uint8_t tx_dist_msg[] = { 0x61, 0x88, 0, 0xCA, 0xDE, 
+//     'X', 'R', 'X', 'T', 'm', 'a', 'c', 'p', 'a', 'y', 'l', 'o', 'a', 'd' };
+
 /* Frames used in the ranging process. See NOTE 3 below. */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0xE0, 0, 0 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', SOURCE_ADDR, 'E', 0xE0, 0, 0 };
 static uint8_t rx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
@@ -91,6 +166,40 @@ static double distance;
  * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 2 below. */
 extern dwt_txconfig_t txconfig_options;
 
+/* Function to pack distance into message */
+static void dist_msg_set_value(uint8_t *buffer, float distance)
+{
+    uint32_t dist_int = (uint32_t)(distance * 1000); // Convert to millimeters
+    // debug_log("Original distance: %f, dist_int: %u", distance, dist_int);
+    buffer[10] = (uint8_t)(dist_int >> 24);
+    buffer[11] = (uint8_t)(dist_int >> 16);
+    buffer[12] = (uint8_t)(dist_int >> 8);
+    buffer[13] = (uint8_t)dist_int;
+
+    // debug_log("Individual bytes: %02x %02x %02x %02x", 
+        // buffer[10], buffer[11], buffer[12], buffer[13]);
+
+}
+
+// FOR TESTING
+// Function to extract distance from received message
+static int dist_msg_get_value(uint8_t *buffer)
+{
+    uint32_t dist_int = 
+        ((uint32_t)buffer[10] << 24) |
+        ((uint32_t)buffer[11] << 16) |
+        ((uint32_t)buffer[12] << 8) |
+        (uint32_t)buffer[13];
+
+    float result = ((float)dist_int) / 1000.0f;  // Cast to float first, then divide
+    // debug_log("Verification int: %u", dist_int);
+    // debug_log("Verification float: %f", result);
+    return dist_int;
+}
+
+
+
+// tx distance message end
 /*! ------------------------------------------------------------------------------------------------------------------
  * @fn main()
  *
@@ -103,11 +212,20 @@ extern dwt_txconfig_t txconfig_options;
 int ss_twr_initiator(void)
 {
 
+    int totalMessages = 0;
+    char uart_message[128];
+
     /* Display application name on LCD. */
     test_run_info((unsigned char *)APP_NAME);
+    debug_log("SOURCE_ADDR: %c", SOURCE_ADDR);
+    char rng_delay_str[32];
+    snprintf(rng_delay_str, sizeof(rng_delay_str), "DELAY: %f ms", RNG_DELAY_MS);
+    test_run_info((unsigned char *)rng_delay_str);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
+
+    uart_init();
 
     /* Reset and initialize DW chip. */
     reset_DWIC(); /* Target specific drive of RSTn line into DW3000 low for a period. */
@@ -150,6 +268,7 @@ int ss_twr_initiator(void)
     /* Next can enable TX/RX states output on GPIOs 5 and 6 to help debug, and also TX/RX LEDs
      * Note, in real low power applications the LEDs should not be used. */
     dwt_setlnapamode(DWT_LNA_ENABLE | DWT_PA_ENABLE);
+    
 
     /* Loop forever initiating ranging exchanges. */
     while (1)
@@ -210,8 +329,34 @@ int ss_twr_initiator(void)
                     tof = ((rtd_init - rtd_resp * (1 - clockOffsetRatio)) / 2.0) * DWT_TIME_UNITS;
                     distance = tof * SPEED_OF_LIGHT;
                     /* Display computed distance on LCD. */
+
                     snprintf(dist_str, sizeof(dist_str), "DIST: %3.2f m", distance);
                     test_run_info((unsigned char *)dist_str);
+                    // uart_send(dist_str);
+
+                    // Prepare and send distance message
+                    tx_dist_msg[ALL_MSG_SN_IDX] = frame_seq_nb;
+
+                    // Set values in distance message 
+                    dist_msg_set_value(tx_dist_msg, (float)distance);
+
+                    // Write frame data to DW IC and prepare transmission
+                    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+                    dwt_writetxdata(sizeof(tx_dist_msg), tx_dist_msg, 0);
+                    dwt_writetxfctrl(sizeof(tx_dist_msg), 0, 1);
+
+                    // Start transmission
+                    dwt_starttx(DWT_START_TX_IMMEDIATE);
+
+                    // Wait for transmission to complete
+                    waitforsysstatus(&status_reg, NULL, DWT_INT_TXFRS_BIT_MASK, 0);
+                    
+
+                    // serial UART logging
+                    snprintf(uart_message, sizeof(uart_message), 
+                        "%f %d %3.2f m \n", 
+                        RNG_DELAY_MS, totalMessages,  distance);
+                    uart_send(uart_message);               
                 }
             }
         }
@@ -222,7 +367,12 @@ int ss_twr_initiator(void)
         }
 
         /* Execute a delay between ranging exchanges. */
+        totalMessages++;
         Sleep(RNG_DELAY_MS);
+        // if (totalMessages >= 500) {
+        //     totalMessages = 0;
+        //     RNG_DELAY_MS -= 10;
+        // }
     }
 }
 #endif
@@ -272,7 +422,7 @@ int ss_twr_initiator(void)
  *    after an exchange of specific messages used to define those short addresses for each device participating to the ranging exchange.
  * 5. This timeout is for complete reception of a frame, i.e. timeout duration must take into account the length of the expected frame. Here the value
  *    is arbitrary but chosen large enough to make sure that there is enough time to receive the complete response frame sent by the responder at the
- *    6.8M data rate used (around 400 µs).
+ *    6.8M data rate used (around 400 ï¿½s).
  * 6. In a real application, for optimum performance within regulatory limits, it may be necessary to set TX pulse bandwidth and TX power, (using
  *    the dwt_configuretxrf API call) to per device calibrated values saved in the target system or the DW IC OTP memory.
  * 7. dwt_writetxdata() takes the full size of the message as a parameter but only copies (size - 2) bytes as the check-sum at the end of the frame is

@@ -50,8 +50,44 @@
         <configuration Name="Debug" build_exclude_from_build="No" />
       </file>
     </folder>
+    
     <folder Name="Src">
       <configuration Name="Common" filter="c;cpp;cxx;cc;h;s;asm;inc" />
+      
+      <folder Name="util">
+        <file file_name="Src/util/util.c" />
+      </folder>
+
+      <folder Name="dependencies">
+        <file file_name="Src/dependencies/ble_nus.c" />
+        <file file_name="Src/dependencies/nrfx_uart.c" />
+        <file file_name="Src/dependencies/nrfx_uart.h" />
+        <file file_name="Src/dependencies/nrfx_uarte.c" />
+        <file file_name="Src/dependencies/nrfx_uarte.h" />
+        <file file_name="Src/dependencies/nrf_drv_uart.c" />
+        <file file_name="Src/dependencies/nrf_drv_uart.h" />
+        <file file_name="Src/dependencies/ble_nus.h" />
+        <file file_name="Src/dependencies/ble.h" />
+        <file file_name="Src/dependencies/nrf_svc.h" />
+        <file file_name="Src/dependencies/ble_err.h" />
+        <file file_name="Src/dependencies/ble_gap.h" />
+        <file file_name="Src/dependencies/ble_hci.h" />
+        <file file_name="Src/dependencies/ble_ranges.h" />
+        <file file_name="Src/dependencies/ble_types.h" />
+        <file file_name="Src/dependencies/ble_gatt.h" />
+        <file file_name="Src/dependencies/ble_gattc.h" />
+        <file file_name="Src/dependencies/ble_gatts.h" />
+        <file file_name="Src/dependencies/ble_srv_common.h" />
+        <file file_name="Src/dependencies/nrf_sdh_ble.h" />
+
+        <file file_name="Src/dependencies/app_uart.h" />
+        <file file_name="Src/dependencies/nrf_uart.h" />
+        <file file_name="Src/dependencies/bsp.h" />
+        <file file_name="Src/dependencies/app_button.h" />
+
+
+      </folder>
+
       <folder Name="platform">
         <file file_name="Src/platform/deca_mutex.c" />
         <file file_name="Src/platform/deca_sleep.c" />
@@ -63,8 +99,11 @@
       </folder>
       <configuration
         Name="Debug"
-        c_user_include_directories=".;./Src/platform" />
+        c_user_include_directories=".;./Src/platform;./Src/dependencies;../../Src/dependencies;$(NordicSDKDir)/components/ble/ble_services/ble_nus;$(NordicSDKDir)/components/softdevice/common" />
       <file file_name="Src/main.c" />
+      <file file_name="Src/anchor_double_buffer.c" />
+      <file file_name="Src/anchor_receiver.c" />
+      <file file_name="Src/throughput_tx.c" />
       <folder Name="SEGGER">
         <file file_name="Src/SEGGER/SEGGER_RTT.c">
           <configuration Name="Debug" build_exclude_from_build="No" />

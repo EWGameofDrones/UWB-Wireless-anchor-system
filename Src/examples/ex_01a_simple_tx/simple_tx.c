@@ -48,14 +48,14 @@ static dwt_config_t config = {
  *     - byte 1: sequence number, incremented for each new frame.
  *     - byte 2 -> 9: device ID, see NOTE 1 below.
  */
-static uint8_t tx_msg[] = { 0xC5, 0, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E' };
+static uint8_t tx_msg[] = { 0xC5, 3, 'D', 'E', 'C', 'A', 'W', 'A', 'V', 'E' };
 /* Index to access to sequence number of the blink frame in the tx_msg array. */
 #define BLINK_FRAME_SN_IDX 1
 
 #define FRAME_LENGTH (sizeof(tx_msg) + FCS_LEN) // The real length that is going to be transmitted
 
 /* Inter-frame delay period, in milliseconds. */
-#define TX_DELAY_MS 500
+#define TX_DELAY_MS 1000
 
 /* Values for the PG_DELAY and TX_POWER registers reflect the bandwidth and power of the spectrum at the current
  * temperature. These values can be calibrated prior to taking reference measurements. See NOTE 2 below. */
@@ -70,6 +70,7 @@ int simple_tx(void)
 
     /* Display application name on LCD. */
     test_run_info((unsigned char *)APP_NAME);
+    debug_log("tx_msg[1]: %d", tx_msg[1]);
 
     /* Configure SPI rate, DW3000 supports up to 36 MHz */
     port_set_dw_ic_spi_fastrate();
@@ -129,13 +130,14 @@ int simple_tx(void)
         /* Clear TX frame sent event. */
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
 
-        test_run_info((unsigned char *)"TX Frame Sent");
+        // test_run_info((unsigned char *)"TX Frame Sent");
+        debug_log("debug_log: TX Frame Sent");
 
         /* Execute a delay between transmissions. */
         Sleep(TX_DELAY_MS);
 
         /* Increment the blink frame sequence number (modulo 256). */
-        tx_msg[BLINK_FRAME_SN_IDX]++;
+        // tx_msg[BLINK_FRAME_SN_IDX]++;
     }
 }
 

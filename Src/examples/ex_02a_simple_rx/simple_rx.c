@@ -121,7 +121,8 @@ int simple_rx(void)
             /* Clear good RX frame event in the DW IC status register. */
             dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK);
 
-            test_run_info((unsigned char *)"Frame Received");
+            // test_run_info((unsigned char *)"Frame Received");
+            debug_log("debug_log: Frame Received: Frame[1]: %d", rx_buffer[1]);
         }
         else
         {

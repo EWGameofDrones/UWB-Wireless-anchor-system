@@ -89,9 +89,16 @@ int main(void)
     /* Small pause before startup */
     nrf_delay_ms(2);
 
+    extern int anchor_dbl_buff(void); anchor_dbl_buff(); 
+    // extern int ss_twr_initiator(void); ss_twr_initiator();  
+    // extern int ss_twr_responder(void); ss_twr_responder();
+    // extern int throughput_tx(void); throughput_tx();
+
+    // extern anchor_receiver(void); anchor_receiver();
+
     // UNCOMMENT EXACTLY ONE OF THE BELOW EXAMPLES, AND ALSO UNCOMMENT THE CORRESPONDING #define IN example_selection.h:
-    extern int read_dev_id(void); read_dev_id();
-    // extern int simple_tx(void); simple_tx();
+    // extern int read_dev_id(void); read_dev_id();
+    // extern int simple_tx(void); simple_tx(); 
     // extern int simple_tx_pdoa(void); simple_tx_pdoa();
     // extern int simple_rx(void); simple_rx();
     // extern int simple_rx_nlos(void); simple_rx_nlos();
@@ -108,8 +115,8 @@ int main(void)
     // extern int tx_wait_resp(void); tx_wait_resp();
     // extern int tx_wait_resp_int(void); tx_wait_resp_int();
     // extern int rx_send_resp(void); rx_send_resp();
-    // extern int ss_twr_responder(void); ss_twr_responder();
-    // extern int ss_twr_initiator(void); ss_twr_initiator();
+    // extern int ss_twr_responder(void); ss_twr_responder(); 
+    // extern int ss_twr_initiator(void); ss_twr_initiator(); 
     // extern int ss_twr_initiator_sts(void); ss_twr_initiator_sts();
     // extern int ss_twr_responder_sts(void); ss_twr_responder_sts();
     // extern int ss_twr_initiator_sts_no_data(void); ss_twr_initiator_sts_no_data();
@@ -117,8 +124,8 @@ int main(void)
     // extern int tx_rx_aes_verification(void); tx_rx_aes_verification();
     // extern int ss_aes_twr_initiator(void); ss_aes_twr_initiator();
     // extern int ss_aes_twr_responder(void); ss_aes_twr_responder();
-    // extern int ds_twr_initiator(void); ds_twr_initiator();
-    // extern int ds_twr_responder(void); ds_twr_responder();
+    // extern int ds_twr_initiator(void); ds_twr_initiator(); 
+    // extern int ds_twr_responder(void); ds_twr_responder(); 
     // extern int ds_twr_responder_sts(void); ds_twr_responder_sts();
     // extern int ds_twr_initiator_sts(void); ds_twr_initiator_sts();
     // extern int ds_twr_sts_sdc_initiator(void); ds_twr_sts_sdc_initiator();
@@ -139,7 +146,7 @@ int main(void)
     // extern int le_pend_rx(void); le_pend_rx();
     // extern int pll_cal(void); pll_cal();
     // extern int bw_cal(void); bw_cal();
-    // extern int double_buffer_rx(void); double_buffer_rx();
+    // extern int double_buffer_rx(void); double_buffer_rx(); 
     // extern int timer_example(void); timer_example();
     // extern int tx_power_adjustment_example(void); tx_power_adjustment_example();
     // extern int simple_aes(void); simple_aes();

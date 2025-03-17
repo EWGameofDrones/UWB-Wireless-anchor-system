@@ -33,7 +33,7 @@ extern void test_run_info(unsigned char *data);
 /* The following can be enabled to use manual RX enable instead of auto RX re-enable
  * NOTE: when using DW30xx devices, only the manual RX enable should be used
  *       with DW37xx devices either manual or auto RX enable can be used. */
-#define USE_MANUAL_RX_ENABLE 0
+#define USE_MANUAL_RX_ENABLE 1
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -158,6 +158,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     if (cb_data->datalength <= FRAME_LEN_MAX)
     {
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
+        debug_log("debug_log: Frame Received: Frame[1]: %d", rx_buffer[1]);
     }
 
     /* TESTING BREAKPOINT LOCATION #2 */

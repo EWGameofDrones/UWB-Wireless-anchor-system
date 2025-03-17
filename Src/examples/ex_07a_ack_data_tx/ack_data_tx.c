@@ -67,7 +67,8 @@ static dwt_config_t config = {
  *     - byte 7/8: source address, see NOTE 2 below.
  *     - byte 9 to 18: MAC payload, see NOTE 1 below.
  *     */
-static uint8_t tx_msg[] = { 0x61, 0x88, 0, 0xCA, 0xDE, 'X', 'R', 'X', 'T', 'm', 'a', 'c', 'p', 'a', 'y', 'l', 'o', 'a', 'd' };
+static uint8_t tx_msg[] = { 0x61, 0x88, 0, 0xCA, 0xDE, 'X', 'R', 'X', 'T', 'm', 'a', 'c', 
+    'p', 'a', 'y', 'l', 'o', 'a', 'd' };
 /* Index to access the sequence number and frame control fields in frames sent and received. */
 #define FRAME_FC_IDX 0
 #define FRAME_SN_IDX 2
@@ -78,7 +79,7 @@ static uint8_t tx_msg[] = { 0x61, 0x88, 0, 0xCA, 0xDE, 'X', 'R', 'X', 'T', 'm', 
 /* Inter-frame delay period, in milliseconds. */
 #define TX_DELAY_MS 1000
 
-/* Receive response timeout, expressed in UWB microseconds (UUS, 1 uus = 512/499.2 µs). See NOTE 3 below. */
+/* Receive response timeout, expressed in UWB microseconds (UUS, 1 uus = 512/499.2 ï¿½s). See NOTE 3 below. */
 #define RX_RESP_TO_UUS 2200
 
 /* Buffer to store received frame. See NOTE 4 below. */
@@ -220,7 +221,7 @@ int ack_data_tx(void)
  *    while loop, and then timing from the "GO" for a few minutes before breaking in again, and examining the frame counters.
  * 2. Source and destination addresses are hard coded constants to keep the example simple but for a real product every device should have a unique ID.
  *    For development purposes it is possible to generate a DW IC unique ID by combining the Lot ID & Part Number values programmed into the DW IC
- *    during its manufacture. However there is no guarantee this will not conflict with someone else’s implementation. We recommended that customers
+ *    during its manufacture. However there is no guarantee this will not conflict with someone elseï¿½s implementation. We recommended that customers
  *    buy a block of addresses from the IEEE Registration Authority for their production items. See "EUI" in the DW IC User Manual.
  * 3. This timeout is for complete reception of a frame, i.e. timeout duration must take into account the length of the expected frame. Here the value
  *    is arbitrary but chosen large enough to make sure that there is enough time to receive a complete ACK frame sent by the "ACK DATA RX" example
