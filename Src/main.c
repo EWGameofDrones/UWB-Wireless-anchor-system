@@ -89,9 +89,12 @@ int main(void)
     /* Small pause before startup */
     nrf_delay_ms(2);
 
-    extern int anchor_dbl_buff(void); anchor_dbl_buff(); 
+    // extern int anchor_dbl_buff(void); anchor_dbl_buff(); 
     // extern int ss_twr_initiator(void); ss_twr_initiator();  
+    extern int ss_twr_initiator_interrupt(void); ss_twr_initiator_interrupt();
+    // extern int ss_twr_initiator_sts(void); ss_twr_initiator_sts();
     // extern int ss_twr_responder(void); ss_twr_responder();
+    // extern int ss_twr_responder_sts(void); ss_twr_responder_sts();
     // extern int throughput_tx(void); throughput_tx();
 
     // extern anchor_receiver(void); anchor_receiver();

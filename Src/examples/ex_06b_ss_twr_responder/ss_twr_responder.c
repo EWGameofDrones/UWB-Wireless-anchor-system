@@ -29,7 +29,13 @@
 extern void test_run_info(unsigned char *data);
 
 /* Example application name */
-#define APP_NAME "SS TWR RESP v1.0"
+#define APP_NAME "SS TWR RESP v1.0 B"
+
+#ifdef MY_RESP_ID == 'A'
+    #define RESPONSE_DELAY_OFFSET 0  // First responder with no extra delay
+#else
+    #define RESPONSE_DELAY_OFFSET 1000  // Second responder with 100 μs delay
+#endif
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -52,9 +58,15 @@ static dwt_config_t config = {
 #define TX_ANT_DLY 16385
 #define RX_ANT_DLY 16385
 
+/* Device identifier - set to either 'A' or 'B' */
+// #define MY_RESP_ID 'A'  // Change to B for the second responder
+#define MY_RESP_ID 'B'  // Change to B for the second responder
+
+
 /* Frames used in the ranging process. See NOTE 3 below. */
 static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0xE0, 0, 0 };
-static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', 'A', 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+/* Update the response message source address with the correct responder ID */
+static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', MY_RESP_ID, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
@@ -74,7 +86,8 @@ static uint8_t rx_buffer[RX_BUF_LEN];
 static uint32_t status_reg = 0;
 
 /* Delay between frames, in UWB microseconds. See NOTE 1 below. */
-#define POLL_RX_TO_RESP_TX_DLY_UUS 650
+// #define POLL_RX_TO_RESP_TX_DLY_UUS 1000
+#define POLL_RX_TO_RESP_TX_DLY_UUS 923
 
 /* Timestamps of frames transmission/reception. */
 static uint64_t poll_rx_ts;
@@ -165,7 +178,9 @@ int ss_twr_responder(void)
                  * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
                 rx_buffer[ALL_MSG_SN_IDX] = 0;
                 // if (memcmp(rx_buffer, rx_poll_msg, ALL_MSG_COMMON_LEN) == 0)
-                if (frame_compare(rx_buffer, rx_poll_msg) == TRUE)
+                int compare_result = frame_compare_2(rx_buffer, rx_poll_msg);
+                // debug_log("frame_compare_2 result: %d", compare_result);
+                if (frame_compare_2(rx_buffer, rx_poll_msg) == 0)
                 {
                     uint32_t resp_tx_time;
                     int ret;
@@ -174,7 +189,7 @@ int ss_twr_responder(void)
                     poll_rx_ts = get_rx_timestamp_u64();
 
                     /* Compute response message transmission time. See NOTE 7 below. */
-                    resp_tx_time = (poll_rx_ts + (POLL_RX_TO_RESP_TX_DLY_UUS * UUS_TO_DWT_TIME)) >> 8;
+                    resp_tx_time = (poll_rx_ts + ((POLL_RX_TO_RESP_TX_DLY_UUS + RESPONSE_DELAY_OFFSET) * UUS_TO_DWT_TIME)) >> 8;
                     dwt_setdelayedtrxtime(resp_tx_time);
 
                     /* Response TX timestamp is the transmission time we programmed plus the antenna delay. */
@@ -202,13 +217,21 @@ int ss_twr_responder(void)
                         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
 
                         /* Increment frame sequence number after transmission of the poll message (modulo 256). */
-                        // frame_seq_nb++;
+                        frame_seq_nb++;
                     } else {
                         debug_log("tx_failed");
+                        printf("ret: %d \n", ret);
                     }
                 } else {
                     debug_log("failed memcmp");
-                    debug_log("expected: %s", rx_poll_msg);
+                    // debug_log("expected: %s", rx_poll_msg);
+                    debug_log("rx_buffer[5]: %c", rx_buffer[5]);
+                    debug_log("rx_buffer[6]: %c", rx_buffer[6]);
+                    debug_log("rx_buffer[8]: %c", rx_buffer[8]);
+
+                    debug_log("rx_poll_msg[5]: %c", rx_poll_msg[5]);
+                    debug_log("rx_poll_msg[6]: %c", rx_poll_msg[6]);
+                    debug_log("rx_poll_msg[8]: %c", rx_poll_msg[8]);
                 }
             }
         }
