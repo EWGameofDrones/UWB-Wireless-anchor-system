@@ -31,11 +31,7 @@ extern void test_run_info(unsigned char *data);
 /* Example application name */
 #define APP_NAME "SS TWR RESP v1.0 B"
 
-#ifdef MY_RESP_ID == 'A'
-    #define RESPONSE_DELAY_OFFSET 0  // First responder with no extra delay
-#else
-    #define RESPONSE_DELAY_OFFSET 1000  // Second responder with 100 μs delay
-#endif
+
 
 /* Default communication configuration. We use default non-STS DW mode. */
 static dwt_config_t config = {
@@ -59,14 +55,19 @@ static dwt_config_t config = {
 #define RX_ANT_DLY 16385
 
 /* Device identifier - set to either 'A' or 'B' */
-// #define MY_RESP_ID 'A'  // Change to B for the second responder
+// #define MY_RESP_ID 'A'
 #define MY_RESP_ID 'B'  // Change to B for the second responder
 
+#if MY_RESP_ID == 'A'
+    #define RESPONSE_DELAY_OFFSET 0  // First responder with no extra delay
+#else
+    #define RESPONSE_DELAY_OFFSET 1000  // Second responder with 100 μs delay
+#endif
 
 /* Frames used in the ranging process. See NOTE 3 below. */
 static uint8_t rx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'V', 'E', 0xE0, 0, 0 };
 /* Update the response message source address with the correct responder ID */
-static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', MY_RESP_ID, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
+static uint8_t tx_resp_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'R', MY_RESP_ID, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 /* Length of the common part of the message (up to and including the function code, see NOTE 3 below). */
 #define ALL_MSG_COMMON_LEN 10
 /* Index to access some of the fields in the frames involved in the process. */
@@ -177,10 +178,12 @@ int ss_twr_responder(void)
                 /* Check that the frame is a poll sent by "SS TWR initiator" example.
                  * As the sequence number field of the frame is not relevant, it is cleared to simplify the validation of the frame. */
                 rx_buffer[ALL_MSG_SN_IDX] = 0;
+
+                // responder_compare(rx_buffer);
+
                 // if (memcmp(rx_buffer, rx_poll_msg, ALL_MSG_COMMON_LEN) == 0)
-                int compare_result = frame_compare_2(rx_buffer, rx_poll_msg);
-                // debug_log("frame_compare_2 result: %d", compare_result);
-                if (frame_compare_2(rx_buffer, rx_poll_msg) == 0)
+                // if (frame_compare_2(rx_buffer, rx_poll_msg) == 0)
+                if (responder_compare(rx_buffer) == true)
                 {
                     uint32_t resp_tx_time;
                     int ret;
@@ -198,6 +201,9 @@ int ss_twr_responder(void)
                     /* Write all timestamps in the final message. See NOTE 8 below. */
                     resp_msg_set_ts(&tx_resp_msg[RESP_MSG_POLL_RX_TS_IDX], poll_rx_ts);
                     resp_msg_set_ts(&tx_resp_msg[RESP_MSG_RESP_TX_TS_IDX], resp_tx_ts);
+
+                    // set tx_resp_msg[6] to be the same as the INITIATOR_ID of the interrupt_intitiator
+                    tx_resp_msg[6] = rx_buffer[8];
 
                     /* Write and send the response message. See NOTE 9 below. */
                     // tx_resp_msg[ALL_MSG_SN_IDX] = frame_seq_nb;

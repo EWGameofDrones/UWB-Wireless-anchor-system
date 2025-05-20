@@ -28,9 +28,6 @@
 #define __DMB() __asm volatile ("dmb" ::: "memory")
 
 
-/* Example application name and version */
-#define APP_NAME "\n\nINT-INITIATOR BETA"
-
 /* Default communication configuration */
 static dwt_config_t config = {
     5,                /* Channel number */
@@ -53,14 +50,32 @@ static dwt_config_t config = {
 #define RX_ANT_DLY 16385
 #define POLL_TX_TO_RESP_RX_DLY_UUS 240
 #define RESP_RX_TIMEOUT_UUS 2000
-#define RNG_DELAY_MS 100
 // #define DWT_TIME_UNITS (1.0/499.2e6/128.0)
 #define DWT_TIME_UNITS (1.0 / (499.2e6 * 128.0))
 #define SPEED_OF_LIGHT 299702547.0
 #define POLL_INTERVAL_MS 100  // Fixed polling interval of 100ms
 
+
+// #define INITIATOR_ID 'A'
+// #define INITIATOR_ID 'B'
+#define INITIATOR_ID 'C'
+
+/* Example application name and version */
+#define RNG_DELAY_MS 100
+#if INITIATOR_ID == 'A'
+    #define APP_NAME "\n\nINT-INITIATOR BETA - ID: A"
+#elif INITIATOR_ID == 'B'
+    #define APP_NAME "\n\nINT-INITIATOR BETA - ID: B"
+    // #define RNG_DELAY_MS 131
+#elif INITIATOR_ID == 'C'
+    #define APP_NAME "\n\nINT-INITIATOR BETA - ID: C"
+#endif
+
 /* Frames used in the ranging process */
-static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'W', 'A', 'I', 'E', 0xE0, 0, 0 };
+static uint8_t tx_poll_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 
+    'W', 'A', 
+    'I', INITIATOR_ID, 
+    0xE0, 0, 0 };
 static uint8_t rx_resp_msg_1[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', RESP_ID_1, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 static uint8_t rx_resp_msg_2[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', RESP_ID_2, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
@@ -139,7 +154,6 @@ typedef enum {
 } state_t;
 
 // GLOBAL VARIABLES
-volatile state_t current_state = STATE_IDLE; // Ensure volatile for interrupt-safe access
 static volatile int32_t ranging_delay_ms = 1000; // Also volatile for interrupt-safe access
 
 // Correct implementation of resp_msg_get_ts
@@ -251,6 +265,9 @@ static void compute_distance(uint8_t *buffer, double *distance, char resp_id)
 volatile uint32_t * const TEST_VARIABLE_PTR = (volatile uint32_t *)0x20004000;
 volatile uint32_t * const tx_poll_timestamp = (volatile uint32_t *)0x20004004;
 volatile uint32_t * const rx_poll_timestamp = (volatile uint32_t *)0x20004008;
+volatile bool * const receivedA = (volatile bool *)0x2000400C;
+volatile bool * const receivedB = (volatile bool *)0x20004010;
+volatile bool * const ranging_active = (volatile bool *)0x20004014;
 
 
 /* Main interrupt-driven initiator function */
@@ -326,15 +343,22 @@ int ss_twr_initiator_interrupt(void)
     
     while (1) {
         printf("Starting ranging\n");
-        print_state("while(1)");
+
+        // CRITICAL Disable interrupt between ranging cycles
+        port_DisableEXT_IRQ();
 
         /* Reset device state */
+        *ranging_active = false;  // Mark that we're not actively ranging yet
+        __DMB();
         dwt_forcetrxoff();
+        Sleep(5);   // Give time for any pending RX to clear
         
         /* Clear all status flags */
         dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK | 
                             DWT_INT_RXFCG_BIT_MASK | 
                             SYS_STATUS_ALL_RX_ERR);
+        *ranging_active = true;
+        __DMB();
         
         /* Prepare frame data */
         tx_poll_msg[ALL_MSG_SN_IDX] = frame_seq_nb++;
@@ -346,73 +370,42 @@ int ss_twr_initiator_interrupt(void)
         dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
         dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 0);
 
+        // NOW enable interrupts right before transmission
+        port_EnableEXT_IRQ();
+
         /* Start transmission */
         int ret = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
+        if (ret != DWT_SUCCESS) {
+            printf("ERROR: dwt_starttx failed! Resetting device.\n");
+            reset_DWIC();   // Reset the device
+            Sleep(50);      // Give time to reset
+            continue;       // try again
+        }
 
         int timeout = 3;
 
         while ((*TEST_VARIABLE_PTR) < 2) {
             // printf("while(1), tx_timestamp: %lu\n", *tx_poll_timestamp);
-            Sleep(100);
+            Sleep(34);
             printf("Test variable: %lu\n", *TEST_VARIABLE_PTR);
-
             timeout--;
             if (timeout <= 0) { break; }
         }
 
+        *ranging_active = false; 
         (*TEST_VARIABLE_PTR) = 0;
-        // printf("Test variable: %lu\n", *TEST_VARIABLE_PTR);
+        __DMB();
+        port_DisableEXT_IRQ();  // CRITICAL: Disable interrupts between cycles
+        dwt_forcetrxoff();  // Force radio off to stop receiving
 
-        Sleep(100);
-        
-        // printf("time elapsed: %d ms\n", port_GetTick() - start_time);
-
-
-        // /* Write frame data to DW IC and prepare transmission */
-        // dwt_writetxdata(sizeof(tx_poll_msg), tx_poll_msg, 0);
-        // dwt_writetxfctrl(sizeof(tx_poll_msg), 0, 0);
-        
-        // /* Start transmission */
-        // int ret = dwt_starttx(DWT_START_TX_IMMEDIATE | DWT_RESPONSE_EXPECTED);
-        // if (ret != DWT_SUCCESS) {
-        //     printf("TX start failed\n");
-        //     continue;
-        // } else {
-        //     printf("TX started successfully\n");
-        // }
-        
-        // /* Wait for any RX event. */
-        // while (tx_delay_ms == -1) { };
-
-        // /* Execute the defined delay before next transmission. */
-        // if (tx_delay_ms > 0)
-        // {
-        //     printf("delay %d ms \n", tx_delay_ms);
-        //     Sleep(tx_delay_ms);
-        // }
-        
-        // /* Manually capture timestamp if callback hasn't */
-        // if (tx_poll_timestamp == 0) {
-        //     tx_poll_timestamp = dwt_readtxtimestamplo32();
-        //     printf("Manual TX timestamp capture: %u\n", tx_poll_timestamp);
-        // }
-
-        // tx_delay_ms = -1;
-        
-        // current_state = STATE_IDLE;
+        Sleep(34);
         printf("End of main loop\n\n");
         /* Rest of main loop... */
+
+        /* Critical addition: delay between ranging cycles */
+        Sleep(RNG_DELAY_MS);  // Add a delay between ranging cycles
     }
 }
-
-// print out the current state
-void print_state(const char *func_name)
-{
-    const char *state_names[] = { "STATE_IDLE", "STATE_POLLING", "STATE_WAITING_FOR_RESPONSES", "STATE_PROCESSING_RESPONSES" };
-    printf("%s: ", func_name);
-    printf("Current state: %s\n", state_names[current_state]);
-}
-
 
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -426,20 +419,27 @@ void print_state(const char *func_name)
  */
 static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 {
-    current_state = STATE_PROCESSING_RESPONSES;
-    __DMB(); // Add memory barrier after state change
 
     // dwt_rxenable(DWT_START_RX_IMMEDIATE); // Re-enable RX immediately
+    // 1, Always clear the interrupt flag first
+    dwt_writesysstatuslo(DWT_INT_RXFCG_BIT_MASK);
 
+    if (!(*ranging_active)) {
+        printf("Ignoring frame outside of ranging cycle\n");
+        dwt_rxenable(DWT_START_RX_IMMEDIATE);  // Re-enable RX for next message
+        return;
+    }
+
+    // 2. Re-enable RX immediately to maintain responsiveness
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+    // 3. NOW process the data (even if this fails, RX is already re-enabled)
     printf("rx_ok_cb\n");
-
     (*TEST_VARIABLE_PTR)++;
     __DMB(); // Add memory barrier after state change
 
-    // print_state("rx_ok_cb");
-
+    // Read data and process it 
     dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
-
     // printf("rx_ok_cb, frame[8]: %c\n", rx_buffer[8]);
 
     uint32_t poll_tx_ts, resp_rx_ts, poll_rx_ts, resp_tx_ts;
@@ -450,21 +450,11 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
 
     // /* Clear local RX buffer */
     // memset(rx_buffer, 0, FRAME_LEN_MAX);
-
-    // printf("rx_ok_cb: lengths: %d : %d\n", cb_data->datalength, sizeof(rx_resp_msg_1));
-    // /* Copy received frame to buffer */
-    if (cb_data->datalength == sizeof(rx_resp_msg_1))
+    // if (cb_data->datalength == sizeof(rx_resp_msg_1))
+    if (rx_buffer[7] == 'R' && rx_buffer[6] == INITIATOR_ID)
     {
-    //     printf("rx_ok_cb: lengths match\n");
-    //     dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
-        
-    //     /* Print raw message for debugging */
-    //     printf("Response message bytes: ");
-    //     for (int i = 0; i < 20; i++) {
-    //         printf("%02X ", rx_buffer[i]);
-    //     }
-    //     printf("\n");
-        printf("rx_ok_cb, frame[8]: %c\n", rx_buffer[8]);
+        printf("rx_ok_cb: ");
+        print_frame(rx_buffer);
 
         /* Retrieve timestamps */
         poll_tx_ts = dwt_readtxtimestamplo32();
@@ -482,14 +472,12 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         /* Print distance information */
         // sprintf(dist_str, "DIST1: %3.2f m", distance);
         printf("DIST: %3.2f m\n", distance);
+    } else {
+        printf("rx_ok_cb, not a response frame or for different initiator\n");
     }
-    dwt_rxenable(DWT_START_RX_IMMEDIATE); // Re-enable RX immediately
-
-    // (*TEST_VARIABLE_PTR)++;
-    // __DMB();  // Memory barrier before reading
     
     printf("rx_ok_cb end\n");
-    // current_state = STATE_IDLE;
+
 }
 
 /*! ------------------------------------------------------------------------------------------------------------------
@@ -503,6 +491,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
  */
 static void rx_to_cb(const dwt_cb_data_t *cb_data)
 {
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
     (void)cb_data;
     printf("rx_to_cb\n");
     /* Set corresponding inter-frame delay. */
@@ -521,6 +510,7 @@ static void rx_to_cb(const dwt_cb_data_t *cb_data)
  */
 static void rx_err_cb(const dwt_cb_data_t *cb_data)
 {
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
     printf("rx_err_cb\n");
     (void)cb_data;
     /* Set corresponding inter-frame delay. */
@@ -571,8 +561,6 @@ static void tx_done_cb(const dwt_cb_data_t *cb_data)
     *tx_poll_timestamp = dwt_readtxtimestamplo32();
     
     printf("tx_done_cb Timestamp captured: %lu\n",*tx_poll_timestamp);
-    current_state = STATE_WAITING_FOR_RESPONSES;
-    __DMB(); // Add memory barrier after state change
 
 }
 
