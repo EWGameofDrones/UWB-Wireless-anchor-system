@@ -162,7 +162,7 @@ static const nrf_drv_uart_t uart_inst = NRF_DRV_UART_INSTANCE(0);
 // Add at file top
 static volatile bool uart_busy = false;
 static volatile bool new_data_ready = false;
-static char uart_message[16]; // Uart message to send to host
+static char uart_message[32]; // Uart message to send to host
 
 // Initialize UART
 static void uart_init(void)
@@ -292,7 +292,7 @@ int anchor_dbl_buff(void) {
 
     /* Enable RX interrupts for double buffer (RX good frames and RX errors). */
     dwt_setinterrupt(DWT_INT_RXFCG_BIT_MASK | SYS_STATUS_ALL_RX_ERR, 0, DWT_ENABLE_INT);
-    // dwt_setinterrupt_db(RDB_STATUS_RXOK, DWT_ENABLE_INT);
+    // dwt_setinterrupt_db(RDB_STATUS_RXOK, DWT_ENABLE_INT);                                                                             
 
     /* Install DW IC IRQ handler. */
     port_set_dwic_isr(dwt_isr);
@@ -319,32 +319,38 @@ int anchor_dbl_buff(void) {
  */
 int totalReceivedRangings = 0;
 static void rx_ok_cb(const dwt_cb_data_t *cb_data) {
-    uint8_t temp_byte;
-    debug_log("RX OK");
+    // printf("rx_ok_cb: start\n");
+    dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
-    /* First check byte 7 without copying entire buffer */
-    dwt_readrxdata(&temp_byte, 1, 7); // Read just byte at index 7
+    uint8_t temp_byte;
+    // debug_log("RX OK");
+
+    /* First check byte 5 without copying entire buffer */
+    dwt_readrxdata(&temp_byte, 1, 5); // Read just byte at index 5
     
     if (temp_byte == 'D') {
+        // printf("rx_ok_cb: temp_byte %c\n", temp_byte);
         /* Only copy full frame if we're interested in it */
         dwt_readrxdata(rx_buffer, cb_data->datalength, 0);
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
         int received_distance = dist_msg_get_value(rx_buffer);
         // snprintf(uart_message, sizeof(uart_message), 
         //         "USING UART: Frame Received: Frame[7, 8]= %c %c : received distance: %3.2f m\n", 
         //         rx_buffer[7], rx_buffer[8], received_distance / 1000.0f);
         snprintf(uart_message, sizeof(uart_message), 
-                "%c %3.2f %d\n", 
-                rx_buffer[8], received_distance / 1000.0f, rx_buffer[2]);
+                "%c %3.2f %d %c\n", 
+                rx_buffer[8], received_distance / 1000.0f, rx_buffer[2], rx_buffer[6]);
         uart_send(uart_message);
-        // debug_log(uart_message);
-    } else {
-        /* Clear RX buffer by re-enabling receiver */
-        // totalReceivedRangings += 1;
-        // debug_log("ranging %d", totalReceivedRangings);
-        dwt_rxenable(DWT_START_RX_IMMEDIATE);
-    }
-
+        printf("rx_ok_cb: %c distance %3.2f %c\n", rx_buffer[8], received_distance / 1000.0f, rx_buffer[6]);
+    } 
+    // else {
+    //     totalReceivedRangings += 1;
+    //     snprintf(uart_message, sizeof(uart_message), 
+    //             "%d \n", 
+    //             totalReceivedRangings);
+    //     uart_send(uart_message);    
+    //     // debug_log("totalReceivedRangings");
+    // }
+    // printf("rx_ok_cb: end\n");
 }
 
 
@@ -355,23 +361,24 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data) {
  * @return  none
  */
 static void rx_err_cb(const dwt_cb_data_t *cb_data) {
-    if (cb_data->status & DWT_INT_RXFTO_BIT_MASK) {
-        debug_log("RX timeout");
-    }
-    if (cb_data->status & DWT_INT_RXPTO_BIT_MASK) {
-        debug_log("Preamble timeout");
-    }
-    if (cb_data->status & DWT_INT_RXPHE_BIT_MASK) {
-        debug_log("PHY header error");
-    }
-    if (cb_data->status & DWT_INT_RXFCE_BIT_MASK) {
-        debug_log("CRC error");
-    }
-    if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK) {
-        debug_log("RX buffer overflow");
-    }
-    
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
+
+    // if (cb_data->status & DWT_INT_RXFTO_BIT_MASK) {
+    //     debug_log("RX timeout");
+    // }
+    // if (cb_data->status & DWT_INT_RXPTO_BIT_MASK) {
+    //     debug_log("Preamble timeout");
+    // }
+    // if (cb_data->status & DWT_INT_RXPHE_BIT_MASK) {
+    //     debug_log("PHY header error");
+    // }
+    // if (cb_data->status & DWT_INT_RXFCE_BIT_MASK) {
+    //     debug_log("CRC error");
+    // }
+    // if (cb_data->status & DWT_INT_RXOVRR_BIT_MASK) {
+    //     debug_log("RX buffer overflow");
+    // }
+    
 }
 
 #endif

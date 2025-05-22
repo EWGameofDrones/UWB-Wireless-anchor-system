@@ -57,8 +57,8 @@ static dwt_config_t config = {
 
 
 // #define INITIATOR_ID 'A'
-// #define INITIATOR_ID 'B'
-#define INITIATOR_ID 'C'
+#define INITIATOR_ID 'B'
+// #define INITIATOR_ID 'C'
 
 /* Example application name and version */
 #define RNG_DELAY_MS 100
@@ -80,8 +80,15 @@ static uint8_t rx_resp_msg_1[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', RES
 static uint8_t rx_resp_msg_2[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'V', 'E', 'W', RESP_ID_2, 0xE1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
 
 /* Distance message to send to monitor/aggregator */
-static uint8_t tx_dist_msg[] = { 0x41, 0x88, 0, 0xCA, 0xDE, 'D', 'I', 'S', 'T', 0xE2, 0, 0, 0, 0, 0, 0 };
-
+static uint8_t tx_dist_msg[] = { 
+    0x41, 0x88,         // Frame control
+    0,                  // Sequence number
+    0xCA, 0xDE,         // PAN ID in correct byte order (little-endian)
+    'D', 'B',           // CHANGE: Use dedicated destination address 'DB' (Distance Buffer)
+    'I', INITIATOR_ID,  // Source address 
+    0xE2,               // Function code
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0   // Distance value
+};
 /* Buffer to store received frames */
 #define RX_BUF_LEN 20
 static uint8_t rx_buffer[RX_BUF_LEN];
@@ -261,6 +268,44 @@ static void compute_distance(uint8_t *buffer, double *distance, char resp_id)
     // printf("compute distance end\n");
 }
 
+// TX distance to USB_ANCHOR
+void tx_dist(uint8_t *buffer, float distance, char resp_id)
+{
+    printf("tx_dist_msg: start\n");
+    // Disable interrupts until tx_dist is over
+    port_DisableEXT_IRQ();
+
+    /* Set responder ID in the message */
+    buffer[6] = resp_id;
+    
+    /* Set distance value in the message */
+    dist_msg_set_value(buffer, distance, INITIATOR_ID);
+    
+    /* Write frame data to DW IC and prepare transmission */
+    dwt_writetxdata(sizeof(tx_dist_msg), buffer, 0);
+    dwt_writetxfctrl(sizeof(tx_dist_msg), 0, 1);
+    
+    /* Start transmission */
+    if (dwt_starttx(DWT_START_TX_IMMEDIATE) != DWT_SUCCESS) {
+        printf("ERROR: dwt_starttx failed! Transmission aborted.\n");
+        return;
+    }
+
+    print_frame(tx_dist_msg);
+
+    /* Wait for transmission to complete */
+    while (!(dwt_readsysstatuslo() & DWT_INT_TXFRS_BIT_MASK)) {
+        Sleep(1); // Small delay to avoid busy-waiting
+    }
+
+    /* Clear TX status flag */
+    dwt_writesysstatuslo(DWT_INT_TXFRS_BIT_MASK);
+
+    // Restore interrupt state
+    port_EnableEXT_IRQ();
+
+    printf("tx_dist_msg: end\n");
+}
 
 volatile uint32_t * const TEST_VARIABLE_PTR = (volatile uint32_t *)0x20004000;
 volatile uint32_t * const tx_poll_timestamp = (volatile uint32_t *)0x20004004;
@@ -269,6 +314,11 @@ volatile bool * const receivedA = (volatile bool *)0x2000400C;
 volatile bool * const receivedB = (volatile bool *)0x20004010;
 volatile bool * const ranging_active = (volatile bool *)0x20004014;
 
+double dist_arr[5] = {0};
+double dist_respB = 0;
+char dist_resp_idB = 0;
+double dist_respA = 0;
+char dist_resp_idA = 0;
 
 /* Main interrupt-driven initiator function */
 int ss_twr_initiator_interrupt(void)
@@ -392,11 +442,23 @@ int ss_twr_initiator_interrupt(void)
             if (timeout <= 0) { break; }
         }
 
+
         *ranging_active = false; 
         (*TEST_VARIABLE_PTR) = 0;
         __DMB();
         port_DisableEXT_IRQ();  // CRITICAL: Disable interrupts between cycles
         dwt_forcetrxoff();  // Force radio off to stop receiving
+
+        if (dist_respA != 0) {
+            tx_dist(tx_dist_msg, dist_respA, dist_resp_idA);
+            dist_respA = 0;
+            Sleep(5);
+        }
+        if (dist_respB != 0) {
+            tx_dist(tx_dist_msg, dist_respB, dist_resp_idB);
+            dist_respB = 0;
+            Sleep(5);
+        }
 
         Sleep(34);
         printf("End of main loop\n\n");
@@ -434,7 +496,7 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
     dwt_rxenable(DWT_START_RX_IMMEDIATE);
 
     // 3. NOW process the data (even if this fails, RX is already re-enabled)
-    printf("rx_ok_cb\n");
+    // printf("rx_ok_cb\n");
     (*TEST_VARIABLE_PTR)++;
     __DMB(); // Add memory barrier after state change
 
@@ -471,12 +533,21 @@ static void rx_ok_cb(const dwt_cb_data_t *cb_data)
         
         /* Print distance information */
         // sprintf(dist_str, "DIST1: %3.2f m", distance);
-        printf("DIST: %3.2f m\n", distance);
+        if (rx_buffer[8] == 'A') {
+            dist_respA = distance;
+            dist_resp_idA = rx_buffer[8];
+        } else if (rx_buffer[8] == 'B') {
+            dist_respB = distance;
+            dist_resp_idB = rx_buffer[8];
+        }
+
+        // tx_dist(tx_dist_msg, distance);
+        printf("DIST: %3.2f m \n", distance);
     } else {
-        printf("rx_ok_cb, not a response frame or for different initiator\n");
+        // printf("rx_ok_cb, not a response frame or for different initiator\n");
     }
     
-    printf("rx_ok_cb end\n");
+    // printf("rx_ok_cb end\n");
 
 }
 
